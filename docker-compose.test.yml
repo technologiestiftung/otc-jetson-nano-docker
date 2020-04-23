@@ -1,0 +1,360 @@
+version: "3.4"
+
+services:
+  mongo: # Don't change this unless you know what you are doing
+    image: mongo:4.2.6
+    hostname: mongo
+    container_name: mongo
+    restart: always
+    command: --replSet rs0 --bind_ip_all
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    # entrypoint: ["mongod"]
+    # command: ["--bind_ip_all", "--replSet", "rs0", "--quiet"]
+    volumes:
+      # - "./mongodb/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d"
+      - "/data/test/db:/data/db"
+    ports:
+      - "27017:27017"
+
+  # used for setting up the replicaset
+  mongo-rs-init:
+    image: technologiestiftung/otc-mongo-replicaset-init:arm64-jetson-nano-v0.1.0
+    depends_on:
+      - mongo
+    # build:
+    #   context: ./otc-mongo-replicaset-init
+    #   dockerfile: Dockerfile
+
+  mongo-listner:
+    container_name: mongo-listener
+    # image: technologiestiftung/otc-mongo-listener:latest
+    build:
+      context: ./otc-mongo-listener
+      dockerfile: Dockerfile
+    environment:
+      MONGO_USER: root
+      MONGO_PW: example
+      MONGO_HOST: mongo
+      MONGO_PORT: 27017
+    depends_on:
+      - mongo
+      - mongo-rs-init
+      - opendatacam
+
+  mongoku:
+    image: technologiestiftung/otc-mongoku:arm64-jetson-nano-v0.1.0
+    # build:
+    #   context: ./otc-mongoku
+    #   dockerfile: Dockerfile
+    ports:
+      - 3100:3100
+    environment:
+      MONGOKU_DEFAULT_HOST: mongodb://root:example@mongo:27017
+    depends_on:
+      - mongo
+      - opendatacam
+      - mongo-rs-init
+
+  # mongo-express:
+  #   image: mongo-express
+  #   restart: always
+  #   ports:
+  #     - 8888:8081
+  #   environment:
+  #     ME_CONFIG_MONGODB_ADMINUSERNAME: root
+  #     ME_CONFIG_MONGODB_ADMINPASSWORD: example
+  #   depends_on:
+  #     - mongo
+  #     - opendatacam
+
+  # https://github.com/gliderlabs/logspout
+  logspout:
+    container_name: logspout
+    hostname: logspout
+    image: technologiestiftung/otc-logspout:arm64-jetson-nano-v3.2.8
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    # access data on this port curl http://127.0.0.1:9999/logs
+    ports:
+      - 9999:80
+    environment:
+      # allows us to ignore specific containers
+      LOGSPOUT: ignore
+      EXCLUDE_LABEL: logspout.exclude
+    # allows http access to the logstream usung curl
+    # see https://github.com/gliderlabs/logspout/tree/master/httpstream
+  opendatacam:
+    image: opendatacam/opendatacam:v3.0.0-beta.1-nano
+    container_name: opendatacam
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - mongo-rs-init
+    privileged: true
+    ports:
+      - "8080:8080"
+      - "8090:8090"
+      - "8070:8070"
+      # - "27017:27017" # lets expose the mongoDB
+    volumes:
+      - "/data/odc/db:/data/db"
+      - "./config.json:/opendatacam/config.json" # Don't change this unless you know what you are doin
+      - "./opendatacam_videos:/darknet/opendatacam_videos:ro" # Don't change this unless you know what you are doin
+      - "/usr/lib/aarch64-linux-gnu/tegra-egl:/usr/lib/aarch64-linux-gnu/tegra-\
+        egl:ro" # Don't change this unless you know what you are doin
+      - "/usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro" # Don't change this unless you know what you are doin
+      - "/etc/ld.so.cache:/etc/ld.so.cache:ro" # Don't change this unless you know what you are doin
+      - "/etc/alternatives:/etc/alternatives:ro" # Don't change this unless you know what you are doin
+      - "/etc/nvidia:/etc/nvidia:ro" # Don't change this unless you know what you are doin
+      - "/var/nvidia:/var/nvidia:ro" # Don't change this unless you know what you are doin
+      - "/var/cuda-repo-10-0-local:/var/cuda-repo-10-0-local:ro" # Don't change this unless you know what you are doin
+      - "/usr/local/cuda:/usr/local/cuda:ro" # Don't change this unless you know what you are doin
+      - "/usr/local/cuda-10.0:/usr/local/cuda-10.0:ro" # Don't change this unless you know what you are doin
+      - "/usr/lib/aarch64-linux-gnu/libgstnvegl-1.0.so.0:/usr/lib/aarch64-linux\
+        -gnu/libgstnvegl-1.0.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosinks.so:/usr/li\
+        b/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosinks.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglstreamsrc.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglstreamsrc.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvegltransform.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvegltransform.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideo4linux2.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideo4linux2.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvarguscamerasrc.so:/us\
+        r/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvarguscamerasrc.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvivafilter.so:/usr/lib\
+        /aarch64-linux-gnu/gstreamer-1.0/libgstnvivafilter.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideocuda.so:/usr/lib\
+        /aarch64-linux-gnu/gstreamer-1.0/libgstnvvideocuda.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvdrmvideosink.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvdrmvideosink.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosink.so:/usr/lib\
+        /aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosink.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvjpeg.so:/usr/lib/aarc\
+        h64-linux-gnu/gstreamer-1.0/libgstnvjpeg.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvidconv.so:/usr/lib/a\
+        arch64-linux-gnu/gstreamer-1.0/libgstnvvidconv.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvtee.so:/usr/lib/aarch\
+        64-linux-gnu/gstreamer-1.0/libgstnvtee.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglglessink.so:/usr/l\
+        ib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglglessink.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvcompositor.so:/usr/li\
+        b/aarch64-linux-gnu/gstreamer-1.0/libgstnvcompositor.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstnvexifmeta.so:/usr/lib/aarch64-linux-\
+        gnu/libgstnvexifmeta.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstnvivameta.so:/usr/lib/aarch64-linux-g\
+        nu/libgstnvivameta.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstnvegl-1.0.so.0:/usr/lib/aarch64-linux\
+        -gnu/libgstnvegl-1.0.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosinks.so:/usr/li\
+        b/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosinks.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglstreamsrc.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglstreamsrc.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvegltransform.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvegltransform.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideo4linux2.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideo4linux2.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvarguscamerasrc.so:/us\
+        r/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvarguscamerasrc.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvivafilter.so:/usr/lib\
+        /aarch64-linux-gnu/gstreamer-1.0/libgstnvivafilter.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideocuda.so:/usr/lib\
+        /aarch64-linux-gnu/gstreamer-1.0/libgstnvvideocuda.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvdrmvideosink.so:/usr/\
+        lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvdrmvideosink.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosink.so:/usr/lib\
+        /aarch64-linux-gnu/gstreamer-1.0/libgstnvvideosink.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvjpeg.so:/usr/lib/aarc\
+        h64-linux-gnu/gstreamer-1.0/libgstnvjpeg.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvvidconv.so:/usr/lib/a\
+        arch64-linux-gnu/gstreamer-1.0/libgstnvvidconv.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvtee.so:/usr/lib/aarch\
+        64-linux-gnu/gstreamer-1.0/libgstnvtee.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglglessink.so:/usr/l\
+        ib/aarch64-linux-gnu/gstreamer-1.0/libgstnveglglessink.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstnvcompositor.so:/usr/li\
+        b/aarch64-linux-gnu/gstreamer-1.0/libgstnvcompositor.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstnvexifmeta.so:/usr/lib/aarch64-linux-\
+        gnu/libgstnvexifmeta.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstnvivameta.so:/usr/lib/aarch64-linux-g\
+        nu/libgstnvivameta.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstbadaudio-1.0.so.0.1405.0:/usr/lib/aar\
+        ch64-linux-gnu/libgstbadaudio-1.0.so.0.1405.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstbadaudio-1.0.so.0:/usr/lib/aarch64-li\
+        nux-gnu/libgstbadaudio-1.0.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstbadvideo-1.0.so.0:/usr/lib/aarch64-li\
+        nux-gnu/libgstbadvideo-1.0.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libgstbadvideo-1.0.so.0.1405.0:/usr/lib/aar\
+        ch64-linux-gnu/libgstbadvideo-1.0.so.0.1405.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLdispatch.so.0:/usr/lib/aarch64-linux-g\
+        nu/libGLdispatch.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLEWmx.so.1.13.0:/usr/lib/aarch64-linux-\
+        gnu/libGLEWmx.so.1.13.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/tegra-egl/libGLESv2_nvidia.so.2:/usr/lib/aa\
+        rch64-linux-gnu/tegra-egl/libGLESv2_nvidia.so.2:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/tegra-egl/libGLESv1_CM_nvidia.so.1:/usr/lib\
+        /aarch64-linux-gnu/tegra-egl/libGLESv1_CM_nvidia.so.1:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLX.so.0.0.0:/usr/lib/aarch64-linux-gnu/\
+        libGLX.so.0.0.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLESv2.so.2:/usr/lib/aarch64-linux-gnu/l\
+        ibGLESv2.so.2:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLEWmx.so.1.13:/usr/lib/aarch64-linux-gn\
+        u/libGLEWmx.so.1.13:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLU.so.1:/usr/lib/aarch64-linux-gnu/libG\
+        LU.so.1:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGL.so.1.0.0:/usr/lib/aarch64-linux-gnu/l\
+        ibGL.so.1.0.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLU.so.1.3.1:/usr/lib/aarch64-linux-gnu/\
+        libGLU.so.1.3.1:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLdispatch.so.0.0.0:/usr/lib/aarch64-lin\
+        ux-gnu/libGLdispatch.so.0.0.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLX_mesa.so.0.0.0:/usr/lib/aarch64-linux\
+        -gnu/libGLX_mesa.so.0.0.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLU.so:/usr/lib/aarch64-linux-gnu/libGLU\
+        .so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLESv2.so:/usr/lib/aarch64-linux-gnu/lib\
+        GLESv2.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGL.so.1:/usr/lib/aarch64-linux-gnu/libGL\
+        .so.1:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/tegra/libGLX_nvidia.so.0:/usr/lib/aarch64-l\
+        inux-gnu/tegra/libGLX_nvidia.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLESv1_CM.so.1.0.0:/usr/lib/aarch64-linu\
+        x-gnu/libGLESv1_CM.so.1.0.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLESv1_CM.so.1:/usr/lib/aarch64-linux-gn\
+        u/libGLESv1_CM.so.1:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLU.a:/usr/lib/aarch64-linux-gnu/libGLU.\
+        a:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGL.so:/usr/lib/aarch64-linux-gnu/libGL.s\
+        o:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLX.so.0:/usr/lib/aarch64-linux-gnu/libG\
+        LX.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLESv2.so.2.0.0:/usr/lib/aarch64-linux-g\
+        nu/libGLESv2.so.2.0.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLX_mesa.so.0:/usr/lib/aarch64-linux-gnu\
+        /libGLX_mesa.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLdispatch.so:/usr/lib/aarch64-linux-gnu\
+        /libGLdispatch.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLESv1_CM.so:/usr/lib/aarch64-linux-gnu/\
+        libGLESv1_CM.so:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLX_indirect.so.0:/usr/lib/aarch64-linux\
+        -gnu/libGLX_indirect.so.0:ro" #!Auto genereated. Don't change this
+      - "/usr/lib/aarch64-linux-gnu/libGLX.so:/usr/lib/aarch64-linux-gnu/libGLX\
+        .so:ro" #!Auto genereated. Don't change this
+      - "/etc/ld.so.conf.d/cuda-10-0.conf:/etc/ld.so.conf.d/cuda-10-0.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/nvidia-container-runtime/host-files-for-container.d/cuda.csv:/etc\
+        /nvidia-container-runtime/host-files-for-container.d/cuda.csv:ro" #!Auto genereated. Don't change this
+      - "/etc/apt/sources.list.d/cuda-10-0-local-10.0.326.list:/etc/apt/sources\
+        .list.d/cuda-10-0-local-10.0.326.list:ro" #!Auto genereated. Don't change this
+      - "/etc/alternatives/libcudnn:/etc/alternatives/libcudnn:ro" #!Auto genereated. Don't change this
+      - "/etc/alternatives/libcudnn_so:/etc/alternatives/libcudnn_so:ro" #!Auto genereated. Don't change this
+      - "/etc/alternatives/libcudnn_stlib:/etc/alternatives/libcudnn_stlib:ro" #!Auto genereated. Don't change this
+      - "/etc/nvidia-container-runtime/host-files-for-container.d/cudnn.csv:/et\
+        c/nvidia-container-runtime/host-files-for-container.d/cudnn.csv:ro" #!Auto genereated. Don't change this
+      - "/etc/ld.so.conf.d/nvidia-tegra.conf:/etc/ld.so.conf.d/nvidia-tegra.con\
+        f:ro" #!Auto genereated. Don't change this
+      - "/etc/nvpmodel:/etc/nvpmodel:ro" #!Auto genereated. Don't change this
+      - "/etc/nvpmodel/nvpmodel_t210_jetson-nano.conf:/etc/nvpmodel/nvpmodel_t2\
+        10_jetson-nano.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/nvpmodel/nvpmodel_t210.conf:/etc/nvpmodel/nvpmodel_t210.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/skel/Desktop/nv_jetson_zoo.desktop:/etc/skel/Desktop/nv_jetson_zo\
+        o.desktop:ro" #!Auto genereated. Don't change this
+      - "/etc/skel/Desktop/nv_devzone.desktop:/etc/skel/Desktop/nv_devzone.desk\
+        top:ro" #!Auto genereated. Don't change this
+      - "/etc/skel/Desktop/nv_forums.desktop:/etc/skel/Desktop/nv_forums.deskto\
+        p:ro" #!Auto genereated. Don't change this
+      - "/etc/nv:/etc/nv:ro" #!Auto genereated. Don't change this
+      - "/etc/nvpmodel.conf:/etc/nvpmodel.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/nvphsd_common.conf:/etc/nvphsd_common.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/nv_boot_control.conf:/etc/nv_boot_control.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/nvidia:/etc/nvidia:ro" #!Auto genereated. Don't change this
+      - "/etc/nvidia-container-runtime:/etc/nvidia-container-runtime:ro" #!Auto genereated. Don't change this
+      - "/etc/apt/sources.list.d/nvidia-l4t-apt-source.list:/etc/apt/sources.li\
+        st.d/nvidia-l4t-apt-source.list:ro" #!Auto genereated. Don't change this
+      - "/etc/nvphsd.conf:/etc/nvphsd.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/xdg/autostart/nvbackground.desktop:/etc/xdg/autostart/nvbackgroun\
+        d.desktop:ro" #!Auto genereated. Don't change this
+      - "/etc/xdg/autostart/nvpmodel_indicator.desktop:/etc/xdg/autostart/nvpmo\
+        del_indicator.desktop:ro" #!Auto genereated. Don't change this
+      - "/etc/xdg/autostart/nvchrome.sh:/etc/xdg/autostart/nvchrome.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/xdg/autostart/nvbackground.sh:/etc/xdg/autostart/nvbackground.sh:\
+        ro" #!Auto genereated. Don't change this
+      - "/etc/xdg/autostart/nvchrome.desktop:/etc/xdg/autostart/nvchrome.deskto\
+        p:ro" #!Auto genereated. Don't change this
+      - "/etc/apparmor.d/abstractions/nvidia:/etc/apparmor.d/abstractions/nvidi\
+        a:ro" #!Auto genereated. Don't change this
+      - "/etc/vulkan/icd.d/nvidia_icd.json:/etc/vulkan/icd.d/nvidia_icd.json:ro" #!Auto genereated. Don't change this
+      - "/etc/nv_tegra_release:/etc/nv_tegra_release:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/timesyncd.conf.d/nv-fallback-ntp.conf:/etc/systemd/timesy\
+        ncd.conf.d/nv-fallback-ntp.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvweston.sh:/etc/systemd/nvweston.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvgetty.sh:/etc/systemd/nvgetty.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/resolved.conf.d/nv-fallback-dns.conf:/etc/systemd/resolve\
+        d.conf.d/nv-fallback-dns.conf:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvmemwarning.sh:/etc/systemd/nvmemwarning.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvfb-early.sh:/etc/systemd/nvfb-early.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvzramconfig.sh:/etc/systemd/nvzramconfig.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nv-l4t-usb-device-mode.service:/etc/systemd/system\
+        /nv-l4t-usb-device-mode.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nv-oem-config.target.wants:/etc/systemd/system/nv-\
+        oem-config.target.wants:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nv-oem-config.target.wants/nvfb-early.service:/etc\
+        /systemd/system/nv-oem-config.target.wants/nvfb-early.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nv-oem-config.target.wants/nvweston.service:/etc/s\
+        ystemd/system/nv-oem-config.target.wants/nvweston.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvpmodel.service:/etc/systemd/system/nvpmodel.serv\
+        ice:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvs-service.service:/etc/systemd/system/nvs-servic\
+        e.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nv-l4t-usb-device-mode.ser\
+        vice:/etc/systemd/system/multi-user.target.wants/nv-l4t-usb-device-mode\
+        .service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nv-l4t-bootloader-config.s\
+        ervice:/etc/systemd/system/multi-user.target.wants/nv-l4t-bootloader-co\
+        nfig.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvpmodel.service:/etc/syst\
+        emd/system/multi-user.target.wants/nvpmodel.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvs-service.service:/etc/s\
+        ystemd/system/multi-user.target.wants/nvs-service.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvzramconfig.service:/etc/\
+        systemd/system/multi-user.target.wants/nvzramconfig.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvphs.service:/etc/systemd\
+        /system/multi-user.target.wants/nvphs.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvfb-early.service:/etc/sy\
+        stemd/system/multi-user.target.wants/nvfb-early.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvweston.service:/etc/syst\
+        emd/system/multi-user.target.wants/nvweston.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nv.service:/etc/systemd/sy\
+        stem/multi-user.target.wants/nv.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvgetty.service:/etc/syste\
+        md/system/multi-user.target.wants/nvgetty.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvargus-daemon.service:/et\
+        c/systemd/system/multi-user.target.wants/nvargus-daemon.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvfb.service:/etc/systemd/\
+        system/multi-user.target.wants/nvfb.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/multi-user.target.wants/nvmemwarning.service:/etc/\
+        systemd/system/multi-user.target.wants/nvmemwarning.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvzramconfig.service:/etc/systemd/system/nvzramcon\
+        fig.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvphs.service:/etc/systemd/system/nvphs.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvfb-early.service:/etc/systemd/system/nvfb-early.\
+        service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvweston.service:/etc/systemd/system/nvweston.serv\
+        ice:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvwifibt.service:/etc/systemd/system/nvwifibt.serv\
+        ice:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nv.service:/etc/systemd/system/nv.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvgetty.service:/etc/systemd/system/nvgetty.servic\
+        e:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvargus-daemon.service:/etc/systemd/system/nvargus\
+        -daemon.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvfb.service:/etc/systemd/system/nvfb.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nvmemwarning.service:/etc/systemd/system/nvmemwarn\
+        ing.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/system/nv-l4t-usb-device-mode-runtime.service:/etc/system\
+        d/system/nv-l4t-usb-device-mode-runtime.service:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nv.sh:/etc/systemd/nv.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvwifibt.sh:/etc/systemd/nvwifibt.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvwifibt-pre.sh:/etc/systemd/nvwifibt-pre.sh:ro" #!Auto genereated. Don't change this
+      - "/etc/systemd/nvfb.sh:/etc/systemd/nvfb.sh:ro" #!Auto genereated. Don't change this
